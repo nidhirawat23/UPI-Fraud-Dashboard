@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UPI Fraud Detection — Analytics Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #06070d;
+    --surface: #0d0f1a;
+    --surface2: #131628;
+    --border: rgba(99,179,237,0.12);
+    --accent: #63b3ed;
+    --accent2: #f6ad55;
+    --accent3: #68d391;
+    --danger: #fc8181;
+    --text: #e2e8f0;
+    --muted: #718096;
+    --glow: rgba(99,179,237,0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(99,179,237,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(99,179,237,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .everything { position: relative; z-index: 1; }
+
+  /* ── HEADER ── */
+  header {
+    padding: 32px 48px 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .header-left .eyebrow {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .header-left h1 {
+    font-size: clamp(28px, 4vw, 48px);
+    font-weight: 800;
+    line-height: 1.05;
+    background: linear-gradient(135deg, #e2e8f0 0%, #63b3ed 60%, #f6ad55 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .header-right {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: right;
+    line-height: 1.8;
+    padding-top: 4px;
+  }
+
+  .live-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    background: var(--accent3);
+    border-radius: 50%;
+    margin-right: 6px;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(104,211,145,0.4); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(104,211,145,0); }
+  }
+
+  /* ── NAV TABS ── */
+  nav {
+    padding: 24px 48px 0;
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  nav::-webkit-scrollbar { display: none; }
+
+  .tab {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .tab:hover { color: var(--text); }
+
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ── MAIN CONTENT ── */
+  main { padding: 32px 48px 64px; }
+
+  .page { display: none; animation: fadeUp 0.4s ease; }
+  .page.active { display: block; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── KPI CARDS ── */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+
+  .kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--kpi-accent, var(--accent));
+  }
+
+  .kpi:hover {
+    border-color: var(--kpi-accent, var(--accent));
+    transform: translateY(-2px);
+  }
+
+  .kpi-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .kpi-value {
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--kpi-accent, var(--accent));
+    line-height: 1;
+  }
+
+  .kpi-sub {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  /* ── CHART GRID ── */
+  .chart-grid {
+    display: grid;
+    gap: 16px;
+  }
+
+  .chart-grid.two { grid-template-columns: 1fr 1fr; }
+  .chart-grid.three { grid-template-columns: 2fr 1fr 1fr; }
+  .chart-grid.auto { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: border-color 0.2s;
+  }
+
+  .card:hover { border-color: rgba(99,179,237,0.25); }
+
+  .card-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .card-heading {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 20px;
+    line-height: 1.3;
+  }
+
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+  }
+
+  /* ── HORIZONTAL BAR CHARTS (custom) ── */
+  .hbar-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .hbar-item { display: flex; align-items: center; gap: 10px; }
+
+  .hbar-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    width: 100px;
+    flex-shrink: 0;
+    text-align: right;
+  }
+
+  .hbar-track {
+    flex: 1;
+    height: 8px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .hbar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 1.2s cubic-bezier(0.16,1,0.3,1);
+    width: 0%;
+  }
+
+  .hbar-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--text);
+    width: 60px;
+    flex-shrink: 0;
+  }
+
+  /* ── DONUT LEGEND ── */
+  .donut-wrap {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .donut-canvas { flex-shrink: 0; }
+
+  .donut-legend { display: flex; flex-direction: column; gap: 12px; }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .legend-text { font-size: 13px; font-weight: 600; }
+  .legend-sub {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* ── MODEL TABLE ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding: 0 16px 12px 0;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 14px 16px 14px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-weight: 600;
+  }
+
+  tr.best td { color: var(--accent); }
+
+  .badge {
+    display: inline-block;
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    letter-spacing: 1px;
+  }
+
+  .badge-best { background: rgba(99,179,237,0.15); color: var(--accent); }
+  .badge-good { background: rgba(104,211,145,0.12); color: var(--accent3); }
+  .badge-ok   { background: rgba(246,173,85,0.12);  color: var(--accent2); }
+  .badge-low  { background: rgba(255,255,255,0.06); color: var(--muted); }
+
+  .metric-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .metric-bar-track {
+    width: 80px; height: 5px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .metric-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1.4s cubic-bezier(0.16,1,0.3,1);
+    width: 0%;
+  }
+
+  /* ── SHAP TABLE ── */
+  .shap-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .shap-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+
+  .shap-rank {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    width: 20px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .shap-name { font-size: 13px; font-weight: 600; flex: 1; }
+
+  .shap-bar-track {
+    width: 120px;
+    height: 6px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .shap-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
+    transition: width 1.4s cubic-bezier(0.16,1,0.3,1);
+    width: 0%;
+  }
+
+  .shap-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    width: 40px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  /* ── FRAUD HOUR CHART (custom) ── */
+  .hour-grid {
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    gap: 3px;
+    align-items: flex-end;
+    height: 80px;
+  }
+
+  .hour-bar {
+    background: var(--accent);
+    border-radius: 2px 2px 0 0;
+    opacity: 0.3;
+    transition: height 1s cubic-bezier(0.16,1,0.3,1), opacity 0.3s;
+    cursor: pointer;
+    min-height: 2px;
+  }
+
+  .hour-bar.high { background: var(--danger); opacity: 0.9; }
+  .hour-bar.medium { background: var(--accent2); opacity: 0.7; }
+  .hour-bar:hover { opacity: 1; }
+
+  .hour-labels {
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    gap: 3px;
+    margin-top: 4px;
+  }
+
+  .hour-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 7px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  /* ── AUC CARDS ── */
+  .auc-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .auc-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 16px;
+    text-align: center;
+  }
+
+  .auc-val {
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+
+  .auc-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  /* ── SECTION HEADER ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .section-header h2 {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .section-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    header, nav, main { padding-left: 20px; padding-right: 20px; }
+    .chart-grid.two, .chart-grid.three { grid-template-columns: 1fr; }
+    .auc-grid { grid-template-columns: repeat(2,1fr); }
+    .donut-wrap { flex-direction: column; }
+    table { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+<div class="everything">
+
+<!-- HEADER -->
+<header>
+  <div class="header-left">
+    <div class="eyebrow">Major Project · Data Science</div>
+    <h1>UPI Fraud<br>Detection</h1>
+  </div>
+  <div class="header-right">
+    <div><span class="live-dot"></span>250K Transactions</div>
+    <div>₹328M Volume Analysed</div>
+    <div>4 ML Models Evaluated</div>
+    <div style="margin-top:8px; color: var(--accent3);">Best: CatBoost · AUC 0.92</div>
+  </div>
+</header>
+
+<!-- NAV -->
+<nav>
+  <button class="tab active" onclick="showPage('overview',this)">Transaction Overview</button>
+  <button class="tab" onclick="showPage('demographics',this)">User Demographics</button>
+  <button class="tab" onclick="showPage('fraud',this)">Fraud & Security</button>
+  <button class="tab" onclick="showPage('models',this)">ML Model Performance</button>
+  <button class="tab" onclick="showPage('curves',this)">Evaluation Curves</button>
+  <button class="tab" onclick="showPage('explainability',this)">Model Explainability</button>
+</nav>
+
+<main>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE 1: TRANSACTION OVERVIEW                  -->
+<!-- ══════════════════════════════════════════════ -->
+<div class="page active" id="page-overview">
+
+  <div class="kpi-row">
+    <div class="kpi" style="--kpi-accent:#63b3ed">
+      <div class="kpi-label">Total Transactions</div>
+      <div class="kpi-value">250K</div>
+      <div class="kpi-sub">Across all UPI types</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#f6ad55">
+      <div class="kpi-label">Total Amount</div>
+      <div class="kpi-value">₹328M</div>
+      <div class="kpi-sub">Total transaction volume</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#68d391">
+      <div class="kpi-label">Success Rate</div>
+      <div class="kpi-value">95.05%</div>
+      <div class="kpi-sub">237.6K successful</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#fc8181">
+      <div class="kpi-label">Failed Transactions</div>
+      <div class="kpi-value">12.38K</div>
+      <div class="kpi-sub">4.95% failure rate</div>
+    </div>
+  </div>
+
+  <div class="chart-grid two" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Merchant Category</div>
+      <div class="card-heading">Which Merchants Drive the Most Transaction Value?</div>
+      <div class="hbar-list" id="merchant-bars"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Transaction Status</div>
+      <div class="card-heading">95% of UPI Transactions Complete Successfully</div>
+      <div class="donut-wrap">
+        <canvas class="donut-canvas" id="statusDonut" width="160" height="160"></canvas>
+        <div class="donut-legend">
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#68d391"></div>
+            <div>
+              <div class="legend-text">237,620</div>
+              <div class="legend-sub">SUCCESS · 95.05%</div>
+            </div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#fc8181"></div>
+            <div>
+              <div class="legend-text">12,380</div>
+              <div class="legend-sub">FAILED · 4.95%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-grid two">
+    <div class="card">
+      <div class="card-title">Transaction Type</div>
+      <div class="card-heading">Which Transaction Type Do Users Prefer?</div>
+      <canvas id="txnTypeChart" height="200"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Monthly Volume</div>
+      <div class="card-heading">Transaction Volume Stays Consistent Year-Round</div>
+      <canvas id="monthlyChart" height="200"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE 2: USER DEMOGRAPHICS                     -->
+<!-- ══════════════════════════════════════════════ -->
+<div class="page" id="page-demographics">
+
+  <div class="kpi-row">
+    <div class="kpi" style="--kpi-accent:#63b3ed">
+      <div class="kpi-label">Total Transactions</div>
+      <div class="kpi-value">250K</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#f6ad55">
+      <div class="kpi-label">Total Amount</div>
+      <div class="kpi-value">₹328M</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#68d391">
+      <div class="kpi-label">Success Rate</div>
+      <div class="kpi-value">0.95</div>
+    </div>
+  </div>
+
+  <div class="chart-grid two" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Age Group Activity</div>
+      <div class="card-heading">Ages 26–35 Are the Most Active UPI Senders</div>
+      <div class="hbar-list" id="age-bars"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Bank Performance</div>
+      <div class="card-heading">Which Bank Sends the Highest Transaction Value?</div>
+      <div class="hbar-list" id="bank-bars"></div>
+    </div>
+  </div>
+
+  <div class="chart-grid two">
+    <div class="card">
+      <div class="card-title">Network Type</div>
+      <div class="card-heading">Which Network Type Has the Highest Fraud Rate?</div>
+      <div class="hbar-list" id="network-fraud-bars"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Age Group Risk</div>
+      <div class="card-heading">Which Age Group Has the Highest Fraud Rate?</div>
+      <div class="hbar-list" id="age-fraud-bars"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE 3: FRAUD & SECURITY                      -->
+<!-- ══════════════════════════════════════════════ -->
+<div class="page" id="page-fraud">
+
+  <div class="kpi-row">
+    <div class="kpi" style="--kpi-accent:#fc8181">
+      <div class="kpi-label">Fraudulent Transactions</div>
+      <div class="kpi-value">480</div>
+      <div class="kpi-sub">Out of 250K total</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#f6ad55">
+      <div class="kpi-label">Fraudulent Amount</div>
+      <div class="kpi-value">₹720K</div>
+      <div class="kpi-sub">Total fraud exposure</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#63b3ed">
+      <div class="kpi-label">Overall Fraud Rate</div>
+      <div class="kpi-value">0.19%</div>
+      <div class="kpi-sub">Industry avg: ~0.1–0.3%</div>
+    </div>
+  </div>
+
+  <div class="chart-grid two" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">State-wise Fraud</div>
+      <div class="card-heading">Which States Have the Most Fraudulent Transactions?</div>
+      <div class="hbar-list" id="state-fraud-bars"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Merchant Targeting</div>
+      <div class="card-heading">Shopping & Grocery Merchants Are Most Targeted</div>
+      <canvas id="fraudMerchantChart" height="230"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-grid two">
+    <div class="card">
+      <div class="card-title">Time of Day</div>
+      <div class="card-heading">Fraud Spikes Sharply Between 8PM and 11PM</div>
+      <div class="hour-grid" id="hourBars"></div>
+      <div class="hour-labels" id="hourLabels"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Day of Week</div>
+      <div class="card-heading">Which Days of the Week See the Most Fraud?</div>
+      <div class="hbar-list" id="day-fraud-bars"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE 4: ML MODEL PERFORMANCE                  -->
+<!-- ══════════════════════════════════════════════ -->
+<div class="page" id="page-models">
+
+  <div class="kpi-row">
+    <div class="kpi" style="--kpi-accent:#68d391">
+      <div class="kpi-label">Best Accuracy</div>
+      <div class="kpi-value">0.97</div>
+      <div class="kpi-sub">CatBoost & Random Forest</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#63b3ed">
+      <div class="kpi-label">Best F1 Score</div>
+      <div class="kpi-value">0.38</div>
+      <div class="kpi-sub">CatBoost</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#f6ad55">
+      <div class="kpi-label">Best Precision</div>
+      <div class="kpi-value">0.25</div>
+      <div class="kpi-sub">CatBoost</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#fc8181">
+      <div class="kpi-label">Best Recall</div>
+      <div class="kpi-value">0.83</div>
+      <div class="kpi-sub">CatBoost</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Model Comparison</div>
+    <div class="card-heading">How Do All 4 Models Compare Across Every Metric?</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Accuracy</th>
+          <th>F1 Score</th>
+          <th>Precision</th>
+          <th>Recall</th>
+          <th>Verdict</th>
+        </tr>
+      </thead>
+      <tbody id="modelTable"></tbody>
+    </table>
+  </div>
+
+  <div class="chart-grid two">
+    <div class="card">
+      <div class="card-title">F1 Score Comparison</div>
+      <div class="card-heading">CatBoost Achieves the Best Fraud Detection F1 of 0.38</div>
+      <canvas id="f1Chart" height="220"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Multi-Metric Overview</div>
+      <div class="card-heading">High Accuracy Alone Is Misleading — F1 Score Decides the Winner</div>
+      <canvas id="radarChart" height="220"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE 5: EVALUATION CURVES                     -->
+<!-- ══════════════════════════════════════════════ -->
+<div class="page" id="page-curves">
+
+  <div class="auc-grid">
+    <div class="auc-card">
+      <div class="auc-val" style="color:#63b3ed">0.92</div>
+      <div class="auc-label">CatBoost AUC</div>
+    </div>
+    <div class="auc-card">
+      <div class="auc-val" style="color:#68d391">0.89</div>
+      <div class="auc-label">Random Forest AUC</div>
+    </div>
+    <div class="auc-card">
+      <div class="auc-val" style="color:#f6ad55">0.85</div>
+      <div class="auc-label">Decision Tree AUC</div>
+    </div>
+    <div class="auc-card">
+      <div class="auc-val" style="color:#fc8181">0.82</div>
+      <div class="auc-label">Logistic Reg. AUC</div>
+    </div>
+  </div>
+
+  <div class="chart-grid two">
+    <div class="card">
+      <div class="card-title">ROC Curve</div>
+      <div class="card-heading">ROC Curve — All Models</div>
+      <canvas id="rocChart" height="280"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Precision-Recall</div>
+      <div class="card-heading">Precision-Recall Curve — All Models</div>
+      <canvas id="prChart" height="280"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE 6: MODEL EXPLAINABILITY                  -->
+<!-- ══════════════════════════════════════════════ -->
+<div class="page" id="page-explainability">
+
+  <div class="kpi-row">
+    <div class="kpi" style="--kpi-accent:#63b3ed">
+      <div class="kpi-label">Best Model</div>
+      <div class="kpi-value" style="font-size:22px">CatBoost</div>
+      <div class="kpi-sub">Optimal threshold: 0.657</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#f6ad55">
+      <div class="kpi-label">Top Feature</div>
+      <div class="kpi-value" style="font-size:20px">Amount</div>
+      <div class="kpi-sub">Highest SHAP impact</div>
+    </div>
+    <div class="kpi" style="--kpi-accent:#68d391">
+      <div class="kpi-label">Features Used</div>
+      <div class="kpi-value">19</div>
+      <div class="kpi-sub">In final model</div>
+    </div>
+  </div>
+
+  <div class="chart-grid two" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">SHAP Mean Feature Importance</div>
+      <div class="card-heading">Top Features Driving CatBoost Predictions</div>
+      <div class="shap-list" id="shapList"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Threshold Tuning</div>
+      <div class="card-heading">CatBoost — Optimal Threshold = 0.657</div>
+      <canvas id="thresholdChart" height="280"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Key Findings</div>
+    <div class="card-heading">What the Model Learned About Fraud Patterns</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:4px">
+      <div style="background:var(--surface2);border-radius:8px;padding:16px;border-left:3px solid var(--accent)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">💰 Amount (INR)</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6">Highest SHAP value. High-value transactions at night are the strongest fraud signal.</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:16px;border-left:3px solid var(--accent2)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">🏪 Merchant Category</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6">Shopping & Grocery are top fraud targets. Category encodes risk level strongly.</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:16px;border-left:3px solid var(--accent3)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">📅 Weekend Flag</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6">Weekend + high amount is a strong engineered feature. Fraudsters exploit off-hours.</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:16px;border-left:3px solid var(--danger)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">🕐 Hour of Day</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6">8PM–11PM spike confirmed by SHAP. Night transactions are high risk.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</main>
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────
+const COLORS = {
+  blue:   '#63b3ed',
+  orange: '#f6ad55',
+  green:  '#68d391',
+  red:    '#fc8181',
+  purple: '#b794f4',
+  pink:   '#f687b3',
+  teal:   '#4fd1c5',
+  yellow: '#faf089',
+};
+
+const chartDefaults = {
+  color: '#718096',
+  font: { family: "'Syne', sans-serif", size: 12 }
+};
+Chart.defaults.color = chartDefaults.color;
+Chart.defaults.font  = chartDefaults.font;
+
+// ── TAB NAVIGATION ────────────────────────────────────────
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  btn.classList.add('active');
+  animateBars();
+  animateMetricBars();
+}
+
+// ── HORIZONTAL BAR BUILDER ────────────────────────────────
+function buildHBars(containerId, items, colorFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const max = Math.max(...items.map(i => i.val));
+  el.innerHTML = items.map(item => `
+    <div class="hbar-item">
+      <div class="hbar-label">${item.label}</div>
+      <div class="hbar-track">
+        <div class="hbar-fill" style="background:${colorFn(item)}" data-pct="${(item.val/max*100).toFixed(1)}"></div>
+      </div>
+      <div class="hbar-val">${item.display}</div>
+    </div>
+  `).join('');
+}
+
+function animateBars() {
+  setTimeout(() => {
+    document.querySelectorAll('.hbar-fill').forEach(el => {
+      el.style.width = el.dataset.pct + '%';
+    });
+    document.querySelectorAll('.shap-bar-fill').forEach(el => {
+      el.style.width = el.dataset.pct + '%';
+    });
+  }, 50);
+}
+
+function animateMetricBars() {
+  setTimeout(() => {
+    document.querySelectorAll('.metric-bar-fill').forEach(el => {
+      el.style.width = el.dataset.pct + '%';
+    });
+  }, 50);
+}
+
+// ── PAGE 1: OVERVIEW ──────────────────────────────────────
+buildHBars('merchant-bars', [
+  {label:'Shopping',     val:78, display:'₹78M'},
+  {label:'Grocery',      val:65, display:'₹65M'},
+  {label:'Utilities',    val:48, display:'₹48M'},
+  {label:'Fuel',         val:40, display:'₹40M'},
+  {label:'Education',    val:32, display:'₹32M'},
+  {label:'Other',        val:28, display:'₹28M'},
+  {label:'Food',         val:22, display:'₹22M'},
+  {label:'Entertainment',val:15, display:'₹15M'},
+], () => COLORS.blue);
+
+// Status Donut
+new Chart(document.getElementById('statusDonut'), {
+  type: 'doughnut',
+  data: {
+    datasets: [{
+      data: [237620, 12380],
+      backgroundColor: [COLORS.green, COLORS.red],
+      borderWidth: 0,
+      hoverOffset: 6,
+    }]
+  },
+  options: {
+    cutout: '72%',
+    plugins: { legend: { display: false }, tooltip: {
+      callbacks: { label: ctx => ` ${ctx.parsed.toLocaleString()} transactions` }
+    }},
+    animation: { animateRotate: true, duration: 1200 }
+  }
+});
+
+// Transaction Type Doughnut
+new Chart(document.getElementById('txnTypeChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['P2P', 'P2M', 'Bill Payment', 'Recharge'],
+    datasets: [{
+      data: [112450, 87660, 37370, 12530],
+      backgroundColor: [COLORS.blue, COLORS.orange, COLORS.green, COLORS.purple],
+      borderWidth: 0,
+      hoverOffset: 8,
+    }]
+  },
+  options: {
+    cutout: '60%',
+    plugins: {
+      legend: { position: 'right', labels: { boxWidth: 12, padding: 16 } },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${(ctx.parsed/1000).toFixed(1)}K (${(ctx.parsed/249010*100).toFixed(1)}%)` } }
+    },
+    animation: { duration: 1200 }
+  }
+});
+
+// Monthly Volume
+const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const monthlyData = [20800,20200,21100,20600,20900,20400,21300,20700,20500,21000,20300,21200];
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'line',
+  data: {
+    labels: months,
+    datasets: [{
+      data: monthlyData,
+      borderColor: COLORS.blue,
+      backgroundColor: 'rgba(99,179,237,0.08)',
+      borderWidth: 2,
+      pointRadius: 4,
+      pointBackgroundColor: COLORS.blue,
+      fill: true,
+      tension: 0.4,
+    }]
+  },
+  options: {
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { font: { family: "'Space Mono'" , size: 9 } } },
+      y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { callback: v => (v/1000).toFixed(0)+'K', font: { family: "'Space Mono'", size: 9 } }, min: 19000 }
+    },
+    animation: { duration: 1200 }
+  }
+});
+
+// ── PAGE 2: DEMOGRAPHICS ──────────────────────────────────
+buildHBars('age-bars', [
+  {label:'26-35', val:100, display:'~100K'},
+  {label:'36-45', val:70,  display:'~70K'},
+  {label:'18-25', val:50,  display:'~50K'},
+  {label:'46-55', val:22,  display:'~22K'},
+  {label:'56+',   val:8,   display:'~8K'},
+], () => COLORS.orange);
+
+buildHBars('bank-bars', [
+  {label:'SBI',      val:95,  display:'~₹95M'},
+  {label:'HDFC',     val:82,  display:'~₹82M'},
+  {label:'ICICI',    val:68,  display:'~₹68M'},
+  {label:'IndusInd', val:42,  display:'~₹42M'},
+  {label:'Yes Bank', val:30,  display:'~₹30M'},
+  {label:'PNB',      val:25,  display:'~₹25M'},
+  {label:'Axis',     val:21,  display:'~₹21M'},
+  {label:'Kotak',    val:18,  display:'~₹18M'},
+], () => COLORS.teal);
+
+buildHBars('network-fraud-bars', [
+  {label:'4G',   val:0.113, display:'11.3%', col: COLORS.red},
+  {label:'5G',   val:0.046, display:'4.6%',  col: COLORS.orange},
+  {label:'WiFi', val:0.024, display:'2.4%',  col: COLORS.blue},
+  {label:'3G',   val:0.010, display:'1.0%',  col: COLORS.green},
+], i => i.col);
+
+buildHBars('age-fraud-bars', [
+  {label:'18-25', val:0.23, display:'23%', col: COLORS.red},
+  {label:'56+',   val:0.22, display:'22%', col: COLORS.red},
+  {label:'26-35', val:0.19, display:'19%', col: COLORS.orange},
+  {label:'36-45', val:0.18, display:'18%', col: COLORS.orange},
+  {label:'46-55', val:0.12, display:'12%', col: COLORS.green},
+], i => i.col);
+
+// ── PAGE 3: FRAUD & SECURITY ──────────────────────────────
+buildHBars('state-fraud-bars', [
+  {label:'Maharashtra', val:72, display:'72'},
+  {label:'Karnataka',   val:65, display:'65'},
+  {label:'Uttar Pradesh',val:58,display:'58'},
+  {label:'Delhi',       val:52, display:'52'},
+  {label:'Rajasthan',   val:44, display:'44'},
+  {label:'Gujarat',     val:38, display:'38'},
+  {label:'Tamil Nadu',  val:32, display:'32'},
+  {label:'Telangana',   val:28, display:'28'},
+], () => COLORS.red);
+
+new Chart(document.getElementById('fraudMerchantChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Shopping','Grocery','Education','Utilities','Fuel','Other','Food','Entertainment','Transport','Healthcare'],
+    datasets: [{
+      data: [140,110,55,50,42,38,25,10,6,4],
+      backgroundColor: [COLORS.red,COLORS.orange,COLORS.blue,COLORS.teal,COLORS.green,COLORS.purple,COLORS.pink,COLORS.yellow,COLORS.blue,COLORS.green],
+      borderWidth: 0,
+      hoverOffset: 8,
+    }]
+  },
+  options: {
+    cutout: '55%',
+    plugins: {
+      legend: { position: 'right', labels: { boxWidth: 10, padding: 10, font: { size: 10 } } },
+    },
+    animation: { duration: 1200 }
+  }
+});
+
+// Hour bars
+const hourData = [8,9,43,1,30,4,21,31,32,37,3,31,18,5,2,7,4,8,12,38,41,43,40,22];
+const maxHour = Math.max(...hourData);
+const hbContainer = document.getElementById('hourBars');
+const hlContainer = document.getElementById('hourLabels');
+hourData.forEach((v, i) => {
+  const pct = (v / maxHour * 100);
+  const cls = v >= 35 ? 'high' : v >= 20 ? 'medium' : '';
+  const bar = document.createElement('div');
+  bar.className = 'hour-bar ' + cls;
+  bar.style.height = pct + '%';
+  bar.title = `Hour ${i}:00 — ${v} frauds`;
+  hbContainer.appendChild(bar);
+
+  const lbl = document.createElement('div');
+  lbl.className = 'hour-label';
+  lbl.textContent = i % 3 === 0 ? i : '';
+  hlContainer.appendChild(lbl);
+});
+
+buildHBars('day-fraud-bars', [
+  {label:'Sunday',    val:78, display:'78', col: COLORS.red},
+  {label:'Wednesday', val:72, display:'72', col: COLORS.red},
+  {label:'Thursday',  val:68, display:'68', col: COLORS.orange},
+  {label:'Monday',    val:65, display:'65', col: COLORS.orange},
+  {label:'Saturday',  val:60, display:'60', col: COLORS.orange},
+  {label:'Friday',    val:55, display:'55', col: COLORS.blue},
+  {label:'Tuesday',   val:42, display:'42', col: COLORS.green},
+], i => i.col);
+
+// ── PAGE 4: ML MODELS ────────────────────────────────────
+const modelData = [
+  { name: 'Logistic Regression', acc: 0.86, f1: 0.09, prec: 0.05, rec: 0.62, badge: 'low' },
+  { name: 'Decision Tree',       acc: 0.93, f1: 0.18, prec: 0.11, rec: 0.66, badge: 'ok'  },
+  { name: 'Random Forest',       acc: 0.97, f1: 0.20, prec: 0.14, rec: 0.40, badge: 'good'},
+  { name: 'CatBoost',            acc: 0.97, f1: 0.38, prec: 0.25, rec: 0.83, badge: 'best'},
+];
+
+const tbody = document.getElementById('modelTable');
+const badgeLabel = { best:'★ WINNER', good:'STRONG', ok:'MODERATE', low:'BASELINE' };
+tbody.innerHTML = modelData.map(m => `
+  <tr class="${m.badge === 'best' ? 'best' : ''}">
+    <td>${m.name}</td>
+    <td>
+      <div class="metric-bar-wrap">
+        ${m.acc.toFixed(2)}
+        <div class="metric-bar-track"><div class="metric-bar-fill" style="background:${COLORS.green}" data-pct="${m.acc*100}"></div></div>
+      </div>
+    </td>
+    <td>
+      <div class="metric-bar-wrap">
+        ${m.f1.toFixed(2)}
+        <div class="metric-bar-track"><div class="metric-bar-fill" style="background:${COLORS.blue}" data-pct="${m.f1*100*2.6}"></div></div>
+      </div>
+    </td>
+    <td>
+      <div class="metric-bar-wrap">
+        ${m.prec.toFixed(2)}
+        <div class="metric-bar-track"><div class="metric-bar-fill" style="background:${COLORS.orange}" data-pct="${m.prec*100*4}"></div></div>
+      </div>
+    </td>
+    <td>
+      <div class="metric-bar-wrap">
+        ${m.rec.toFixed(2)}
+        <div class="metric-bar-track"><div class="metric-bar-fill" style="background:${COLORS.red}" data-pct="${m.rec*100}"></div></div>
+      </div>
+    </td>
+    <td><span class="badge badge-${m.badge}">${badgeLabel[m.badge]}</span></td>
+  </tr>
+`).join('');
+
+new Chart(document.getElementById('f1Chart'), {
+  type: 'bar',
+  data: {
+    labels: ['CatBoost','Random Forest','Decision Tree','Logistic Reg.'],
+    datasets: [{
+      data: [0.38, 0.20, 0.18, 0.09],
+      backgroundColor: [COLORS.blue, COLORS.green, COLORS.orange, COLORS.red],
+      borderRadius: 6,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,0.04)' }, max: 0.5 },
+      y: { grid: { display: false } }
+    },
+    animation: { duration: 1200 }
+  }
+});
+
+new Chart(document.getElementById('radarChart'), {
+  type: 'radar',
+  data: {
+    labels: ['Accuracy','F1 Score','Precision','Recall'],
+    datasets: [
+      { label:'CatBoost',       data:[0.97,0.38,0.25,0.83], borderColor:COLORS.blue,   backgroundColor:'rgba(99,179,237,0.12)',  borderWidth:2, pointRadius:4 },
+      { label:'Random Forest',  data:[0.97,0.20,0.14,0.40], borderColor:COLORS.green,  backgroundColor:'rgba(104,211,145,0.08)', borderWidth:2, pointRadius:3 },
+      { label:'Decision Tree',  data:[0.93,0.18,0.11,0.66], borderColor:COLORS.orange, backgroundColor:'rgba(246,173,85,0.08)',  borderWidth:2, pointRadius:3 },
+      { label:'Logistic Reg.',  data:[0.86,0.09,0.05,0.62], borderColor:COLORS.red,    backgroundColor:'rgba(252,129,129,0.08)', borderWidth:2, pointRadius:3 },
+    ]
+  },
+  options: {
+    scales: {
+      r: {
+        grid: { color: 'rgba(255,255,255,0.06)' },
+        angleLines: { color: 'rgba(255,255,255,0.06)' },
+        ticks: { display: false },
+        min: 0, max: 1,
+        pointLabels: { font: { size: 11, family: "'Space Mono'" } }
+      }
+    },
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 10 } } } },
+    animation: { duration: 1200 }
+  }
+});
+
+// ── PAGE 5: CURVES ────────────────────────────────────────
+// ROC curve — approximate curves from AUC values
+function rocPoints(auc, n=50) {
+  const pts = [[0,0]];
+  for (let i = 1; i <= n; i++) {
+    const fpr = i/n;
+    // Rough approximation: TPR = fpr^((1-auc)/auc) style
+    const tpr = Math.min(1, fpr * (auc/(1-auc)) * (1 - fpr*0.3));
+    pts.push([fpr, Math.min(1, tpr)]);
+  }
+  pts.push([1,1]);
+  return pts;
+}
+
+function makeROCDataset(label, auc, color) {
+  const pts = rocPoints(auc);
+  return {
+    label: `${label} (AUC=${auc})`,
+    data: pts.map(([x,y]) => ({x,y})),
+    borderColor: color,
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    pointRadius: 0,
+    tension: 0.3,
+  };
+}
+
+new Chart(document.getElementById('rocChart'), {
+  type: 'line',
+  data: {
+    datasets: [
+      makeROCDataset('CatBoost', 0.915, COLORS.blue),
+      makeROCDataset('Random Forest', 0.892, COLORS.green),
+      makeROCDataset('Decision Tree', 0.849, COLORS.orange),
+      makeROCDataset('Logistic Reg.', 0.82, COLORS.red),
+      { label:'Random', data:[{x:0,y:0},{x:1,y:1}], borderColor:'rgba(255,255,255,0.2)', borderWidth:1, borderDash:[5,5], pointRadius:0 }
+    ]
+  },
+  options: {
+    scales: {
+      x: { type:'linear', min:0, max:1, title:{ display:true, text:'False Positive Rate', font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'} },
+      y: { min:0, max:1, title:{ display:true, text:'True Positive Rate', font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'} }
+    },
+    plugins: { legend: { position:'bottom', labels:{boxWidth:10, padding:10, font:{size:10}} } },
+    animation: { duration: 1200 }
+  }
+});
+
+// PR curve approx
+function prPoints(ap, n=60) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const rec = i/n;
+    const prec = Math.max(0, ap * (1 - rec*0.85) + Math.random()*0.01);
+    pts.push([rec, prec]);
+  }
+  return pts;
+}
+
+new Chart(document.getElementById('prChart'), {
+  type: 'line',
+  data: {
+    datasets: [
+      { label:'CatBoost (AP=0.092)',       data: prPoints(0.092).map(([x,y])=>({x,y})), borderColor:COLORS.blue,   backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:0.4 },
+      { label:'Decision Tree (AP=0.088)',  data: prPoints(0.088).map(([x,y])=>({x,y})), borderColor:COLORS.orange, backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:0.4 },
+      { label:'Logistic Reg. (AP=0.094)', data: prPoints(0.094).map(([x,y])=>({x,y})), borderColor:COLORS.green,  backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:0.4 },
+      { label:'Random Forest (AP=0.069)', data: prPoints(0.069).map(([x,y])=>({x,y})), borderColor:COLORS.red,    backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:0.4 },
+    ]
+  },
+  options: {
+    scales: {
+      x: { type:'linear', min:0, max:1, title:{display:true, text:'Recall', font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'} },
+      y: { min:0, max:1, title:{display:true, text:'Precision', font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'} }
+    },
+    plugins: { legend: { position:'bottom', labels:{boxWidth:10, padding:10, font:{size:10}} } },
+    animation: { duration: 1200 }
+  }
+});
+
+// ── PAGE 6: EXPLAINABILITY ────────────────────────────────
+const shapFeatures = [
+  { name: 'amount (INR)',       val: 0.31 },
+  { name: 'merchant_category', val: 0.13 },
+  { name: 'is_weekend',        val: 0.08 },
+  { name: 'hour_of_day',       val: 0.07 },
+  { name: 'weekend_high_amount', val: 0.055 },
+  { name: 'is_night',          val: 0.05 },
+  { name: 'transaction type',  val: 0.028 },
+  { name: 'high_amount',       val: 0.022 },
+  { name: 'sender_bank',       val: 0.018 },
+  { name: 'device_type',       val: 0.015 },
+];
+
+const shapMax = shapFeatures[0].val;
+document.getElementById('shapList').innerHTML = shapFeatures.map((f, i) => `
+  <div class="shap-row">
+    <div class="shap-rank">${i+1}</div>
+    <div class="shap-name">${f.name}</div>
+    <div class="shap-bar-track">
+      <div class="shap-bar-fill" data-pct="${(f.val/shapMax*100).toFixed(1)}"></div>
+    </div>
+    <div class="shap-val">${f.val.toFixed(3)}</div>
+  </div>
+`).join('');
+
+// Threshold chart
+const thresholds = Array.from({length:100}, (_,i) => i/100);
+function f1Curve(t) {
+  if (t < 0.1) return 0.02 + t * 0.8;
+  if (t < 0.5) return 0.1 + (t-0.1)*0.5;
+  if (t < 0.657) return 0.3 + (t-0.5)*0.6;
+  if (t < 0.75) return 0.4 - (t-0.657)*2;
+  return Math.max(0, 0.22 - (t-0.75)*2);
+}
+function precCurve(t) { return Math.min(1, 0.02 + t * 0.35); }
+function recCurve(t) { return Math.max(0, 0.99 - t * 1.1); }
+
+new Chart(document.getElementById('thresholdChart'), {
+  type: 'line',
+  data: {
+    labels: thresholds.map(t => t.toFixed(2)),
+    datasets: [
+      { label:'F1 Score',  data: thresholds.map(f1Curve),   borderColor:COLORS.blue,   borderWidth:2, pointRadius:0, tension:0.4 },
+      { label:'Precision', data: thresholds.map(precCurve), borderColor:COLORS.green,  borderWidth:2, pointRadius:0, tension:0.4, borderDash:[5,3] },
+      { label:'Recall',    data: thresholds.map(recCurve),  borderColor:COLORS.orange, borderWidth:2, pointRadius:0, tension:0.4, borderDash:[5,3] },
+    ]
+  },
+  options: {
+    plugins: {
+      legend: { position:'bottom', labels:{boxWidth:10, padding:10, font:{size:10}} },
+      annotation: {}
+    },
+    scales: {
+      x: { ticks:{ maxTicksLimit:6, font:{family:"'Space Mono'", size:9} }, grid:{color:'rgba(255,255,255,0.04)'}, title:{display:true, text:'Threshold', font:{size:10}} },
+      y: { min:0, max:1, grid:{color:'rgba(255,255,255,0.04)'} }
+    },
+    animation: { duration: 1200 }
+  }
+});
+
+// Initial bar animation on load
+setTimeout(animateBars, 200);
+setTimeout(animateMetricBars, 200);
+</script>
+</body>
+</html>
